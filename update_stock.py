@@ -1,67 +1,73 @@
 import requests
 import os
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 
-# 로컬 테스트용 (GitHub Actions에서는 Secret 설정이 우선됨)
 load_dotenv()
 
-# Alpha Vantage API 설정
 API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
-SYMBOL = "AAPL"  # 원하는 주식 심볼 (애플: AAPL, 테슬라: TSLA, 삼성전자: 005930.KS)
-URL = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={SYMBOL}&apikey={API_KEY}"
+
+# 한국 대표 종목 10개 (종목코드.KS 또는 .KQ)
+# 005930: 삼성전자, 000660: SK하이닉스, 005490: POSCO홀딩스 등
+SYMBOLS = [
+    "005930.KS", "000660.KS", "373220.KS", "207940.KS", 
+    "005380.KS", "068270.KS", "005490.KS", "051910.KS", 
+    "035420.KS", "006400.KS"
+]
+
+# 종목코드와 매칭되는 한글 이름 (딕셔너리)
+NAMES = {
+    "005930.KS": "삼성전자", "000660.KS": "SK하이닉스", "373220.KS": "LG에너지솔루션",
+    "207940.KS": "삼성바이오로직스", "005380.KS": "현대차", "068270.KS": "셀트리온",
+    "005490.KS": "POSCO홀딩스", "051910.KS": "LG화학", "035420.KS": "NAVER", "006400.KS": "삼성SDI"
+}
 
 README_PATH = "README.md"
 
-def get_stock_data():
-    """Alpha Vantage API를 호출하여 주식 데이터를 가져옴"""
-    response = requests.get(URL)
-    if response.status_code == 200:
-        data = response.json()
-        # API 응답에서 핵심 데이터 추출
-        quote = data.get("Global Quote", {})
-        
-        if not quote:
-            return "주식 데이터를 찾을 수 없습니다. (API 호출 한도 초과일 수 있음)"
-            
-        price = quote.get("05. price", "0")
-        change_percent = quote.get("10. change percent", "0%")
-        high = quote.get("03. high", "0")
-        low = quote.get("04. low", "0")
-        
-        return {
-            "symbol": SYMBOL,
-            "price": float(price),
-            "change": change_percent,
-            "high": high,
-            "low": low
-        }
-    return None
+def get_stock_data(symbol):
+    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={API_KEY}"
+    response = requests.get(url)
+    data = response.json()
+    return data.get("Global Quote", {})
 
 def update_readme():
-    """README.md 파일을 주식 정보로 업데이트"""
-    stock = get_stock_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stock_rows = ""
 
-    if isinstance(stock, dict):
-        stock_info = f"📈 **{stock['symbol']}** | 현재가: **${stock['price']:.2f}** ({stock['change']})"
-        extra_info = f"- 오늘의 고가: ${stock['high']} / 저가: ${stock['low']}"
-    else:
-        stock_info = "데이터를 가져오는 중 오류가 발생했습니다."
-        extra_info = ""
+    print(f"한국 주식 업데이트 시작: {now}")
+    
+    for i, symbol in enumerate(SYMBOLS):
+        # 5개마다 65초 대기 (무료 API 제한)
+        if i > 0 and i % 5 == 0:
+            print("API 제한 방지를 위해 잠시 대기 중...")
+            time.sleep(65) 
+            
+        quote = get_stock_data(symbol)
+        name = NAMES.get(symbol, symbol)
+        
+        if quote:
+            # 한국 주식은 소수점 없이 원화(KRW)로 표시되므로 정수 처리
+            price = quote.get("05. price", "0")
+            change = quote.get("10. change percent", "0%")
+            formatted_price = format(int(float(price)), ',') # 세 자리마다 콤마
+            stock_rows += f"| {name} | {formatted_price}원 | {change} |\n"
+            print(f"{name} 완료!")
+        else:
+            stock_rows += f"| {name} | 데이터 없음 | - |\n"
 
     readme_content = f"""
-# 💹 실시간 주식 대시보드
+# 🇰🇷 실시간 국내 주요 종목 (KOSPI Top 10)
 
-이 리포지토리는 Alpha Vantage API와 GitHub Actions를 사용하여 주가 정보를 자동으로 업데이트합니다.
+이 대시보드는 Alpha Vantage API를 통해 한국 시장의 주요 종목 주가를 자동으로 업데이트합니다.
 
-## 실시간 종목 정보
-> {stock_info}
-{extra_info}
+| 종목명 | 현재가 | 변동률 |
+| :--- | :--- | :--- |
+{stock_rows}
 
 ---
 ⏳ **최종 업데이트 시간:** {now} (KST/UTC)  
-*본 데이터는 Alpha Vantage를 통해 제공됩니다.*
+*참고: Alpha Vantage의 한국 데이터는 실시간보다 15~20분 정도 지연될 수 있습니다.*
 """
 
     with open(README_PATH, "w", encoding="utf-8") as file:
