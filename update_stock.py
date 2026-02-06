@@ -1,77 +1,65 @@
 import requests
 import os
-import time
 from datetime import datetime
-from dotenv import load_dotenv
 
-load_dotenv()
+# FRED API 설정 (GitHub Secrets에 FRED_API_KEY 등록 필수)
+API_KEY = os.getenv("FRED_API_KEY")
 
-API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
-
-# 한국 대표 종목 10개 (종목코드.KS 또는 .KQ)
-# 005930: 삼성전자, 000660: SK하이닉스, 005490: POSCO홀딩스 등
-SYMBOLS = [
-    "005930.KS", "000660.KS", "373220.KS", "207940.KS", 
-    "005380.KS", "068270.KS", "005490.KS", "051910.KS", 
-    "035420.KS", "006400.KS"
-]
-
-# 종목코드와 매칭되는 한글 이름 (딕셔너리)
-NAMES = {
-    "005930.KS": "삼성전자", "000660.KS": "SK하이닉스", "373220.KS": "LG에너지솔루션",
-    "207940.KS": "삼성바이오로직스", "005380.KS": "현대차", "068270.KS": "셀트리온",
-    "005490.KS": "POSCO홀딩스", "051910.KS": "LG화학", "035420.KS": "NAVER", "006400.KS": "삼성SDI"
+# 금융권 핵심 거시 경제 지표 (기준금리, 물가, 실업률, 장단기 금리차)
+INDICATORS = {
+    "FEDFUNDS": "🇺🇸 미국 기준 금리 (Fed Funds Rate)",
+    "CPIAUCSL": "🍎 소비자 물가 지수 (CPI)",
+    "UNRATE": "👷 실업률 (Unemployment Rate)",
+    "T10Y2Y": "📉 장단기 금리차 (10Y-2Y Spread)"
 }
 
 README_PATH = "README.md"
 
-def get_stock_data(symbol):
-    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={API_KEY}"
-    response = requests.get(url)
-    data = response.json()
-    return data.get("Global Quote", {})
+def get_fred_data(series_id):
+    url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={API_KEY}&file_type=json&sort_order=desc&limit=1"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        if "observations" in data and len(data["observations"]) > 0:
+            value = data["observations"][0]["value"]
+            date = data["observations"][0]["date"]
+            return value, date
+    except Exception as e:
+        print(f"Error fetching {series_id}: {e}")
+    return None, None
 
 def update_readme():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    stock_rows = ""
+    rows = ""
 
-    print(f"한국 주식 업데이트 시작: {now}")
-    
-    for i, symbol in enumerate(SYMBOLS):
-        # 5개마다 65초 대기 (무료 API 제한)
-        if i > 0 and i % 5 == 0:
-            print("API 제한 방지를 위해 잠시 대기 중...")
-            time.sleep(65) 
-            
-        quote = get_stock_data(symbol)
-        name = NAMES.get(symbol, symbol)
-        
-        if quote:
-            # 한국 주식은 소수점 없이 원화(KRW)로 표시되므로 정수 처리
-            price = quote.get("05. price", "0")
-            change = quote.get("10. change percent", "0%")
-            formatted_price = format(int(float(price)), ',') # 세 자리마다 콤마
-            stock_rows += f"| {name} | {formatted_price}원 | {change} |\n"
-            print(f"{name} 완료!")
+    print("FRED 거시 경제 데이터 수집 중...")
+    for s_id, name in INDICATORS.items():
+        value, date = get_fred_data(s_id)
+        if value:
+            rows += f"| {name} | **{value}%** | {date} |\n"
+            print(f"{name} 완료")
         else:
-            stock_rows += f"| {name} | 데이터 없음 | - |\n"
+            rows += f"| {name} | 데이터 없음 | - |\n"
 
     readme_content = f"""
-# 🇰🇷 실시간 국내 주요 종목 (KOSPI Top 10)
+# 🏛️ Global Macro Economic Dashboard
 
-이 대시보드는 Alpha Vantage API를 통해 한국 시장의 주요 종목 주가를 자동으로 업데이트합니다.
+이 리포지토리는 **FRED API**와 **GitHub Actions**를 사용하여 글로벌 거시 경제 지표를 실시간으로 모니터링하는 금융 데이터 파이프라인입니다.
 
-| 종목명 | 현재가 | 변동률 |
+## 📊 주요 거시 경제 지표
+| 지표명 | 수치 | 마지막 발표일 |
 | :--- | :--- | :--- |
-{stock_rows}
+{rows}
 
 ---
-⏳ **최종 업데이트 시간:** {now} (KST/UTC)  
-*참고: Alpha Vantage의 한국 데이터는 실시간보다 15~20분 정도 지연될 수 있습니다.*
+⏳ **최종 업데이트:** {now} (KST)  
+*출처: Federal Reserve Bank of St. Louis (FRED API)*
 """
-
-    with open(README_PATH, "w", encoding="utf-8") as file:
-        file.write(readme_content)
+    with open(README_PATH, "w", encoding="utf-8") as f:
+        f.write(readme_content)
 
 if __name__ == "__main__":
-    update_readme()
+    if not API_KEY:
+        print("FRED_API_KEY가 없습니다. Secrets 설정을 확인하세요.")
+    else:
+        update_readme()
