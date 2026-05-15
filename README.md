@@ -13,5 +13,5 @@
 
 
 ---
-⏳ **최종 업데이트:** 2026-05-14 01:51:43 (KST)  
+⏳ **최종 업데이트:** 2026-05-15 01:49:20 (KST)  
 *출처: Federal Reserve Bank of St. Louis (FRED API)*
